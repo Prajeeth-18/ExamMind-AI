@@ -1,35 +1,57 @@
 import re
 
 
-QUESTION_PATTERNS = [
-
-    r"\bQ\s*\.?\s*(\d+)\b",
-
-    r"\bQuestion\s*(\d+)\b",
-
-    r"^(\d+)[.)]",
-
-]
-
-
-def detect_question(text):
+def detect_questions(text):
 
     lines = text.splitlines()
+
+    questions = []
+
+    current_question = None
+
+    current_answer = []
+
+    pattern = re.compile(
+        r'^\s*(\d+)[.):-]?\s*'
+    )
 
     for line in lines:
 
         line = line.strip()
 
-        for pattern in QUESTION_PATTERNS:
+        if line == "":
+            continue
 
-            match = re.search(
-                pattern,
-                line,
-                re.IGNORECASE
-            )
+        match = pattern.match(line)
 
-            if match:
+        if match:
 
-                return "Q" + match.group(1)
+            if current_question is not None:
 
-    return None
+                questions.append({
+
+                    "question_no": current_question,
+
+                    "answer": "\n".join(current_answer).strip()
+
+                })
+
+            current_question = match.group(1)
+
+            current_answer = [line]
+
+        else:
+
+            current_answer.append(line)
+
+    if current_question is not None:
+
+        questions.append({
+
+            "question_no": current_question,
+
+            "answer": "\n".join(current_answer).strip()
+
+        })
+
+    return questions

@@ -5,103 +5,169 @@ import {
   useRef,
 } from "react";
 
+import { useScannerState } from "../hooks/useScannerState";
+
 const CameraPreview = forwardRef((props, ref) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const { setScannerState } = useScannerState();
 
   useEffect(() => {
+    let mounted = true;
+
+    async function startCamera() {
+      try {
+        setScannerState("CAMERA_STARTING");
+
+        // Ask camera permission once
+        const permissionStream =
+          await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+
+        permissionStream
+          .getTracks()
+          .forEach((track) => track.stop());
+
+        const devices =
+          await navigator.mediaDevices.enumerateDevices();
+
+        const cameras = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
+        console.log("========== Cameras ==========");
+
+        cameras.forEach((camera, index) => {
+          console.log(index, camera.label);
+        });
+
+        let selectedCamera = cameras.find((camera) =>
+          camera.label.toLowerCase().includes("logitech")
+        );
+
+        if (!selectedCamera && cameras.length > 0) {
+          selectedCamera = cameras[0];
+        }
+
+        if (!selectedCamera) {
+          throw new Error("No camera found.");
+        }
+
+        console.log(
+          "Using Camera:",
+          selectedCamera.label
+        );
+
+        const stream =
+          await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: {
+                exact: selectedCamera.deviceId,
+              },
+              width: {
+                ideal: 1920,
+              },
+              height: {
+                ideal: 1080,
+              },
+            },
+          });
+
+        if (!mounted) {
+          stream
+            .getTracks()
+            .forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+
+          videoRef.current.onloadedmetadata =
+            async () => {
+              try {
+                await videoRef.current.play();
+                setScannerState(
+                  "SEARCHING_PAPER"
+                );
+              } catch (err) {
+                console.error(
+                  "Camera Error:",
+                  err
+                );
+              }
+            };
+        }
+      } catch (error) {
+        console.error("Camera Error:", error);
+
+        setScannerState("CAMERA_ERROR");
+
+        alert("Cannot access webcam");
+      }
+    }
+
     startCamera();
 
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        videoRef.current.srcObject
+      mounted = false;
+
+      if (streamRef.current) {
+        streamRef.current
           .getTracks()
-          .forEach(track => track.stop());
+          .forEach((track) => track.stop());
       }
-    };
-  }, []);
-
-  async function startCamera() {
-    try {
-
-      // Ask camera permission
-      await navigator.mediaDevices.getUserMedia({
-        video: true
-      });
-
-      // Get all available cameras
-      const devices = await navigator.mediaDevices.enumerateDevices();
-
-      const cameras = devices.filter(
-        device => device.kind === "videoinput"
-      );
-
-      console.log("====================================");
-      console.log("Available Cameras");
-      console.log("====================================");
-
-      cameras.forEach((camera, index) => {
-        console.log(index, camera.label);
-      });
-
-      // Automatically select Logitech if available
-      let selectedCamera = cameras.find(camera =>
-        camera.label.toLowerCase().includes("logitech")
-      );
-
-      // Otherwise use first available camera
-      if (!selectedCamera) {
-        selectedCamera = cameras[0];
-      }
-
-      console.log("====================================");
-      console.log("Using Camera:");
-      console.log(selectedCamera.label);
-      console.log("====================================");
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: {
-            exact: selectedCamera.deviceId
-          },
-          width: {
-            ideal: 1920
-          },
-          height: {
-            ideal: 1080
-          }
-        }
-      });
 
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+        videoRef.current.srcObject = null;
       }
-
-    } catch (error) {
-      console.error(error);
-      alert("Cannot access webcam");
-    }
-  }
+    };
+  }, [setScannerState]);
 
   function captureImage() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    if (!video || !canvas) return null;
+    if (
+      !video ||
+      !canvas ||
+      video.readyState < 2 ||
+      video.videoWidth === 0
+    ) {
+      return null;
+    }
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
     const ctx = canvas.getContext("2d");
 
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(
+      video,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
 
     return new Promise((resolve) => {
       canvas.toBlob(
         (blob) => {
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+
           resolve({
-            preview: canvas.toDataURL("image/jpeg"),
-            blob: blob,
+            preview: canvas.toDataURL(
+              "image/jpeg"
+            ),
+            blob,
           });
         },
         "image/jpeg",
@@ -112,6 +178,7 @@ const CameraPreview = forwardRef((props, ref) => {
 
   useImperativeHandle(ref, () => ({
     captureImage,
+    videoRef,
   }));
 
   return (
@@ -119,10 +186,14 @@ const CameraPreview = forwardRef((props, ref) => {
       <video
         ref={videoRef}
         autoPlay
+        muted
         playsInline
         style={{
           width: "100%",
+          height: "100%",
+          objectFit: "cover",
           borderRadius: "10px",
+          background: "#000",
         }}
       />
 

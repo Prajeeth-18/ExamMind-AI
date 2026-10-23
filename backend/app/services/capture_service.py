@@ -2,6 +2,7 @@ import os
 import shutil
 
 from app.services.processing_queue import add_page
+from app.services.document_detection.blur import check_blur
 
 UPLOAD_DIRECTORY = "uploads/answer_sheets"
 
@@ -36,6 +37,10 @@ async def save_page(
             buffer
         )
 
+    # Check image blur
+    blur_result = check_blur(file_path)
+
+    # Add page to processing queue
     add_page(
         session_id,
         page_number,
@@ -48,6 +53,8 @@ async def save_page(
 
         "page": page_number,
 
-        "status": "Queued"
+        "status": "Queued",
+
+        "blur": blur_result
 
     }

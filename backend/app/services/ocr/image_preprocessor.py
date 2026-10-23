@@ -107,6 +107,14 @@ def preprocess_image(image_path):
 
         print("Document NOT detected.")
 
+        print("Contours found:", len(contours))
+
+        for c in contours:
+            area = cv2.contourArea(c)
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+            print("Area:", area, "Corners:", len(approx))
+
     debug_path = image_path.replace(
         ".jpg",
         "_document.jpg"
